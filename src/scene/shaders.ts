@@ -93,6 +93,7 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
         float obsHeat = heat * uObserverRedshift;
         float proxShift = clamp((1.0 - uObserverRedshift) * 2.1, 0.0, 0.36);
 
+        // Warm palette (Natural <-> Deep Amber)
         vec3 ember = vec3(0.065, 0.008, 0.002);
         vec3 deepOrange = vec3(0.45, 0.09, 0.012);
         vec3 fieryAmber = vec3(0.92, 0.34, 0.052);
@@ -106,6 +107,7 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
         cWarm = mix(cWarm, warmIvory, smoothstep(0.83, 1.18, h));
         cWarm = mix(cWarm, vec3(cWarm.r * 1.05, cWarm.g * 0.82, cWarm.b * 0.64), proxShift);
 
+        // High-Energy X-Ray palette
         vec3 qDark = vec3(0.04, 0.015, 0.13);
         vec3 qMid = vec3(0.12, 0.44, 1.02);
         vec3 qHot = vec3(0.96, 1.14, 1.40);
@@ -113,6 +115,7 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
         cXray = mix(cXray, qHot, smoothstep(0.56, 1.02, obsHeat * dopplerBoost));
         cXray = mix(cXray, vec3(cXray.r * 1.06, cXray.g * 0.80, cXray.b * 0.92), proxShift * 0.6);
 
+        // Luminous plasma-violet bridge prevents muddy gray midtones during transition
         float bridge = 4.0 * localXray * (1.0 - localXray);
         vec3 ionViolet = vec3(0.82, 0.20, 0.96) * clamp(obsHeat * 1.12, 0.16, 1.32);
         vec3 c = mix(cWarm, cXray, localXray);
@@ -173,7 +176,7 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
         return 0.018 + 0.015 * pow(max(r - R_PLUNGE_MIN, 0.0), 0.78);
       }
 
-      // Dynamic Keplerian shear + radial inward infall + ISCO shear flares (zero extra texture fetches)
+      // Ultra-fast hardware-filtered LUT turbulence + Inside-Out Thermal X-Ray Wave + Dust Transparency Reveal
       void evalDiskSample(
         float uCoord,
         float vCoord,
@@ -192,42 +195,36 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
         if (radialMask < 0.004) return;
 
         float angle = atan(vCoord, uCoord);
-        // Vigorous Keplerian differential rotation + active inward radial infall
-        float omega = 2.45 / pow(max(r, 1.18), 1.28);
+        float omega = 1.05 / pow(max(r, 1.25), 1.35);
         float logR = log(max(r, 1.08));
-        float radialInfall = uTime * 0.16;
         vec2 pLocal = vec2(uCoord, vCoord);
 
-        float spiral1 = 2.25 * (logR + radialInfall) - uTime * omega;
+        float spiral1 = 1.95 * logR - uTime * omega;
         float ct1 = cos(spiral1);
         float st1 = sin(spiral1);
         vec2 adv1 = vec2(pLocal.x * ct1 - pLocal.y * st1, pLocal.x * st1 + pLocal.y * ct1);
 
-        float spiral2 = 3.85 * (logR + radialInfall * 1.55) - uTime * (omega * 1.38);
+        float spiral2 = 3.25 * logR - uTime * (omega * 1.32);
         float ct2 = cos(spiral2);
         float st2 = sin(spiral2);
         vec2 adv2 = vec2(pLocal.x * ct2 - pLocal.y * st2, pLocal.x * st2 + pLocal.y * ct2);
 
-        vec4 texWarp = texture2D(uNoiseTex, adv1 * 0.048 + vec2(0.13, 0.37) + vec2(uTime * 0.018, -uTime * 0.012));
-        vec2 warp = (texWarp.ra - 0.5) * 0.16;
+        vec4 texWarp = texture2D(uNoiseTex, adv1 * 0.048 + vec2(0.13, 0.37));
+        vec2 warp = (texWarp.ra - 0.5) * 0.14;
 
         vec4 texMain = texture2D(uNoiseTex, adv1 * 0.072 + warp);
-        vec4 texFine = texture2D(uNoiseTex, adv2 * 0.165 + warp * 0.90 + vec2(0.41, 0.19));
+        vec4 texFine = texture2D(uNoiseTex, adv2 * 0.155 + warp * 0.85 + vec2(0.41, 0.19));
 
-        float plasma = smoothstep(0.20, 0.82, texMain.r * 0.42 + texMain.g * 0.34 + texFine.b * 0.30);
+        float plasma = smoothstep(0.22, 0.82, texMain.r * 0.44 + texMain.g * 0.34 + texFine.b * 0.28);
         float dustCanyon = smoothstep(0.38, 0.74, texMain.a * 0.65 + texWarp.g * 0.35);
 
-        // ISCO inner-rim shear flares (reuses already-fetched noise channels)
-        float shearZone = smoothstep(R_PLUNGE_MIN, R_DISK_IN + 0.15, r) * (1.0 - smoothstep(2.15, 3.25, r));
-        float shearFlare = pow(smoothstep(0.56, 0.92, texFine.r * texMain.g * 1.52), 2.4) * shearZone;
-
-        float plungeOpacity = mix(0.28, 1.0, smoothstep(R_PLUNGE_MIN, R_DISK_IN + 0.14, r));
+        float plungeOpacity = mix(0.26, 1.0, smoothstep(R_PLUNGE_MIN, R_DISK_IN + 0.14, r));
 
         // Relativistic Doppler beaming + gravitational redshift
         vec3 orbitalTangent = normalize(-sin(angle) * DISK_U + cos(angle) * DISK_V);
         vec3 radialInward = normalize(-uCoord * DISK_U - vCoord * DISK_V);
-        float plungeBlend = 1.0 - smoothstep(1.50, 2.30, r);
-        vec3 flowDir = normalize(mix(orbitalTangent, normalize(orbitalTangent * 0.70 + radialInward * 0.71), plungeBlend));
+        float plungeBlend = 1.0 - smoothstep(1.50, 2.25, r);
+        vec3 flowDir = normalize(mix(orbitalTangent, normalize(orbitalTangent * 0.72 + radialInward * 0.69), plungeBlend));
 
         float beta = clamp(sqrt(R_S / max(2.0 * (r - R_S * 0.55), 0.38)) * 0.50, 0.05, 0.48);
         float gamma = inversesqrt(max(1.0 - beta * beta, 0.18));
@@ -236,18 +233,19 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
         float gFactor = gravRed / (gamma * max(1.0 - beta * cosTheta, 0.40));
 
         float rNorm = clamp((r - R_DISK_IN) / (R_DISK_OUT - R_DISK_IN), 0.0, 1.0);
-        float baseHeat = pow(1.0 - rNorm, 1.42) * (0.42 + 0.66 * plasma) + shearFlare * 0.46;
+        float baseHeat = pow(1.0 - rNorm, 1.42) * (0.42 + 0.66 * plasma);
         if (r < R_DISK_IN) {
           baseHeat *= mix(0.55, 1.08, smoothstep(R_PLUNGE_MIN, R_DISK_IN, r));
         }
 
-        // Inside-Out Thermal Wave
+        // Inside-Out Thermal Wave: highest-energy inner Doppler rim transforms into X-Ray first!
         float energyScore = clamp(baseHeat * 0.58 + (gFactor - 0.65) * 0.42 + (1.0 - rNorm) * 0.34, 0.0, 1.0);
         float waveEdge = mix(-0.02, 1.44, clamp(uSpectrumWeights.y, 0.0, 1.0));
         float localXray = 1.0 - smoothstep(waveEdge - 0.42, waveEdge, 1.0 - energyScore);
 
+        // X-Ray dust transparency reveal: cold dust canyons turn translucent so back lensed arcs show through
         float dustSuppression = mix(0.56, 0.12, localXray);
-        float density = (0.04 + plasma * 1.20 + shearFlare * 0.65) * (1.0 - dustCanyon * dustSuppression) * radialMask * plungeOpacity * vertWeight;
+        float density = (0.04 + plasma * 1.22) * (1.0 - dustCanyon * dustSuppression) * radialMask * plungeOpacity * vertWeight;
 
         float beaming = pow(clamp(gFactor, 0.52, 1.48), 1.95);
         vec3 emitColor = mapAccretionPalette(baseHeat, clamp(gFactor, 0.62, 1.38), localXray);
@@ -323,6 +321,7 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
               break;
             }
 
+            // Smooth C-infinity continuous step sizing tuned for fast GPU convergence
             float hCur = dot(pos, DISK_N);
             float hDist = abs(hCur);
             float rStep = 0.022 * r + 0.0032 * r * r;
@@ -330,6 +329,7 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
             float nearStep = clamp(0.020 * r, 0.015, 0.085);
             float ds = mix(clamp(rStep, 0.016, 0.72), nearStep, diskProximity);
 
+            // Exact Schwarzschild symplectic Velocity-Verlet null geodesic
             vec3 hVec = cross(pos, vel);
             float h2 = dot(hVec, hVec);
 
@@ -395,132 +395,6 @@ export function createRelativisticBlackHoleMaterial(uniforms: {
     `,
     side: THREE.BackSide,
     depthWrite: false,
-  });
-}
-
-// Ultra-lightweight 1-draw-call GPU-animated spaghettified tidal disruption streams
-export function createTidalDisruptionMaterial(uniforms: {
-  uTime: { value: number };
-  uSpectrumWeights: { value: THREE.Vector2 };
-  uDirectTonemap: { value: number };
-}): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader: /* glsl */ `
-      attribute vec4 aSeed;
-      attribute vec2 aTilt;
-
-      uniform float uTime;
-
-      varying vec2 vUv;
-      varying float vHeat;
-      varying float vLifeAlpha;
-      varying float vDoppler;
-      varying vec3 vWorldPos;
-      varying float vRadius;
-
-      const vec3 DISK_N = vec3(0.055, 0.996, -0.068);
-      const vec3 DISK_U = vec3(0.998, -0.055, 0.000);
-      const vec3 DISK_V = vec3(0.004, 0.068, 0.998);
-
-      vec3 evalOrbitalPoint(float r, float phi, float tiltAmp, float tiltPhase) {
-        float yOff = sin(phi + tiltPhase) * tiltAmp * r;
-        return r * (cos(phi) * DISK_U + sin(phi) * DISK_V) + yOff * DISK_N;
-      }
-
-      void main() {
-        vUv = uv;
-
-        // Continuous infall cycle (0 = outer capture -> 1 = shredded & swallowed at horizon)
-        float cycle = fract(aSeed.y + uTime * aSeed.w);
-        float rHead = mix(aSeed.x, 1.30, pow(cycle, 1.28));
-
-        // Tidal spaghettification: ribbon stretches dramatically as it dives close to r_s
-        float stretchAngle = 0.16 + 1.55 / pow(max(rHead - 0.72, 0.36), 1.42);
-        float along = 1.0 - uv.x; // 0 at head, 1 at trailing tail
-        float rSample = mix(rHead, min(rHead + 0.45 + 0.35 * cycle, aSeed.x + 1.2), along * along);
-
-        // Faster Keplerian angular winding as r shrinks
-        float phiHead = aSeed.z + uTime * (1.85 / pow(max(rHead, 1.25), 1.15)) + 3.6 * log(max(aSeed.x / max(rHead, 1.1), 1.0));
-        float phiSample = phiHead - along * stretchAngle;
-
-        vec3 pCenter = evalOrbitalPoint(rSample, phiSample, aTilt.x, aTilt.y);
-        vec3 pAhead = evalOrbitalPoint(max(rSample - 0.04, 1.1), phiSample + 0.05, aTilt.x, aTilt.y);
-        vec3 tangent = normalize(pAhead - pCenter);
-
-        vec3 toCam = normalize(cameraPosition - pCenter);
-        vec3 side = normalize(cross(tangent, toCam));
-
-        // Tapered filament width: bright compressed head -> razor-thin shredded tail
-        float taper = mix(0.16, 1.0, smoothstep(0.0, 0.85, uv.x)) * (1.0 - 0.55 * smoothstep(0.88, 1.0, uv.x));
-        float halfW = (0.013 + 0.015 * (1.0 - cycle * 0.45)) * taper;
-
-        vec3 worldPos = pCenter + side * ((uv.y - 0.5) * 2.0 * halfW);
-        vWorldPos = worldPos;
-        vRadius = rSample;
-
-        // Relativistic Doppler shift & tidal compression heating
-        float cosDir = dot(tangent, toCam);
-        vDoppler = clamp(0.65 + 0.65 * cosDir, 0.35, 1.55);
-        vHeat = clamp(0.35 + 0.65 * (1.0 - (rSample - 1.3) / 7.5), 0.0, 1.0);
-
-        float birthFade = smoothstep(0.0, 0.14, cycle);
-        float deathFade = (1.0 - smoothstep(0.76, 0.98, cycle)) * smoothstep(1.30, 1.72, rSample);
-        vLifeAlpha = birthFade * deathFade;
-
-        gl_Position = projectionMatrix * viewMatrix * vec4(worldPos, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform vec2 uSpectrumWeights;
-      uniform float uDirectTonemap;
-
-      varying vec2 vUv;
-      varying float vHeat;
-      varying float vLifeAlpha;
-      varying float vDoppler;
-      varying vec3 vWorldPos;
-      varying float vRadius;
-
-      void main() {
-        if (vLifeAlpha < 0.01) discard;
-
-        // Black-hole shadow occlusion: hide streams passing BEHIND the #000000 event horizon shadow
-        vec3 dirToCenter = normalize(-cameraPosition);
-        float behindBH = dot(vWorldPos, dirToCenter);
-        if (behindBH > 0.0) {
-          vec3 rayDir = normalize(vWorldPos - cameraPosition);
-          float impactB = length(cross(cameraPosition, rayDir));
-          if (impactB < 2.60) discard;
-        }
-
-        // Crisp glowing core along ribbon spine with rapid longitudinal & cross fade
-        float crossProfile = exp(-pow((vUv.y - 0.5) * 3.4, 2.0));
-        float tailFade = smoothstep(0.0, 0.72, vUv.x);
-        float headSpark = pow(smoothstep(0.65, 0.96, vUv.x), 2.0) * 1.45;
-        float intensity = (tailFade * 0.55 + headSpark) * crossProfile * vLifeAlpha * vDoppler;
-        if (intensity < 0.01) discard;
-
-        // Sync color seamlessly with Natural / Amber / X-Ray spectrum
-        float xray = uSpectrumWeights.y;
-        vec3 warmCol = mix(vec3(1.15, 0.44, 0.08), vec3(1.55, 1.24, 0.86), vHeat);
-        vec3 amberCol = mix(vec3(1.08, 0.36, 0.06), vec3(1.42, 1.05, 0.62), vHeat);
-        vec3 cWarm = mix(warmCol, amberCol, uSpectrumWeights.x);
-        vec3 cXray = mix(vec3(0.24, 0.52, 1.25), vec3(0.95, 1.22, 1.55), vHeat);
-
-        float bridge = 4.0 * xray * (1.0 - xray);
-        vec3 col = mix(cWarm, cXray, xray);
-        col = mix(col, max(col, vec3(0.88, 0.25, 0.98)), bridge * 0.45);
-
-        float gain = uDirectTonemap > 0.5 ? 0.62 : 0.78;
-        gl_FragColor = vec4(col * intensity * gain, 1.0);
-      }
-    `,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    depthTest: false,
-    side: THREE.DoubleSide,
   });
 }
 

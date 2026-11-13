@@ -201,7 +201,7 @@ export function AxonSceneCanvas({
 
     const assembly = createRelativisticBlackHoleAssembly();
     assembly.uniforms.uDirectTonemap.value = isSoftwareGl ? 1.0 : 0.0;
-    scene.add(assembly.group);
+    scene.add(assembly.cosmosSphere);
 
     const audioEngine = new SpaceAudioEngine();
     audioRef.current = audioEngine;

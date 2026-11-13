@@ -1,8 +1,5 @@
 import * as THREE from 'three';
-import {
-  createRelativisticBlackHoleMaterial,
-  createTidalDisruptionMaterial,
-} from './shaders';
+import { createRelativisticBlackHoleMaterial } from './shaders';
 
 function hash2Periodic(ix: number, iy: number, period: number, seed: number): number {
   const px = ((ix % period) + period) % period;
@@ -69,13 +66,8 @@ function createSeamlessNoiseTexture(size = 256): THREE.DataTexture {
   return tex;
 }
 
-function seededRand(i: number): number {
-  const x = Math.sin(i * 127.1 + 311.7) * 43758.5453123;
-  return x - Math.floor(x);
-}
-
 export interface RelativisticBlackHoleAssembly {
-  group: THREE.Group;
+  cosmosSphere: THREE.Mesh;
   uniforms: {
     uTime: { value: number };
     uSpectrumWeights: { value: THREE.Vector2 };
@@ -94,9 +86,6 @@ export function createRelativisticBlackHoleAssembly(): RelativisticBlackHoleAsse
   const uObserverRedshift = { value: 1.0 };
   const uNoiseTex = { value: noiseTex };
 
-  const group = new THREE.Group();
-
-  // 1) Raymarched Schwarzschild Black Hole & Accretion Disk
   const skyGeo = new THREE.SphereGeometry(100, 48, 36);
   const skyMat = createRelativisticBlackHoleMaterial({
     uTime,
@@ -105,52 +94,12 @@ export function createRelativisticBlackHoleAssembly(): RelativisticBlackHoleAsse
     uObserverRedshift,
     uNoiseTex,
   });
+
   const cosmosSphere = new THREE.Mesh(skyGeo, skyMat);
   cosmosSphere.frustumCulled = false;
-  cosmosSphere.renderOrder = 0;
-  group.add(cosmosSphere);
-
-  // 2) Single-draw-call GPU-instanced Tidal Disruption Streams (180 curved filaments)
-  const STREAM_COUNT = 180;
-  const ribbonGeo = new THREE.PlaneGeometry(1, 1, 8, 1);
-  const seeds = new Float32Array(STREAM_COUNT * 4);
-  const tilts = new Float32Array(STREAM_COUNT * 2);
-
-  for (let i = 0; i < STREAM_COUNT; i++) {
-    const r0 = 3.8 + seededRand(i * 5 + 1) * 5.2;
-    const phaseOffset = seededRand(i * 5 + 2);
-    const phi0 = seededRand(i * 5 + 3) * Math.PI * 2;
-    const speedRate = 0.065 + seededRand(i * 5 + 4) * 0.075;
-
-    seeds[i * 4] = r0;
-    seeds[i * 4 + 1] = phaseOffset;
-    seeds[i * 4 + 2] = phi0;
-    seeds[i * 4 + 3] = speedRate;
-
-    // 75% closely hug the accretion plane; 25% dive from tilted halo orbits
-    const haloStream = seededRand(i * 5 + 5) > 0.75;
-    tilts[i * 2] = haloStream
-      ? (seededRand(i * 7 + 1) - 0.5) * 0.55
-      : (seededRand(i * 7 + 1) - 0.5) * 0.14;
-    tilts[i * 2 + 1] = seededRand(i * 7 + 2) * Math.PI * 2;
-  }
-
-  ribbonGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 4));
-  ribbonGeo.setAttribute('aTilt', new THREE.InstancedBufferAttribute(tilts, 2));
-
-  const streamMat = createTidalDisruptionMaterial({
-    uTime,
-    uSpectrumWeights,
-    uDirectTonemap,
-  });
-
-  const tidalStreams = new THREE.InstancedMesh(ribbonGeo, streamMat, STREAM_COUNT);
-  tidalStreams.frustumCulled = false;
-  tidalStreams.renderOrder = 1;
-  group.add(tidalStreams);
 
   return {
-    group,
+    cosmosSphere,
     uniforms: {
       uTime,
       uSpectrumWeights,
@@ -161,8 +110,6 @@ export function createRelativisticBlackHoleAssembly(): RelativisticBlackHoleAsse
     dispose: () => {
       skyGeo.dispose();
       skyMat.dispose();
-      ribbonGeo.dispose();
-      streamMat.dispose();
       noiseTex.dispose();
     },
   };
