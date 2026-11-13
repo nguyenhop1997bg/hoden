@@ -1,0 +1,6 @@
+{
+  "name": "Axon",
+  "description": "Axon — A platform that deploys digital workers for mundane workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
